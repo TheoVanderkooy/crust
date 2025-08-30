@@ -1,0 +1,4 @@
+src/*.o
+test-c
+test-rs
+/.direnv
