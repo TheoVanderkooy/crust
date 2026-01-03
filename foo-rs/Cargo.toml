@@ -2,7 +2,8 @@
 name = "foo-rs"
 version = "0.1.0"
 edition = "2024"
-build = "build.rs"
+# build.rs actually isn't necessary if we don't link the C object files
+# build = "build.rs"
 
 [lib]
 crate-type = ["staticlib"]
