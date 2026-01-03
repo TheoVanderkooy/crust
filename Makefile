@@ -13,11 +13,12 @@ test-c: main.c $(OBJECTS_CONLY) $(OBJECTS_BOTH)
 	gcc main.c $(OBJECTS_CONLY) $(OBJECTS_BOTH) -o test-c
 
 # realistically this can be unconditional, no dependencies
-foo-rs/target/release/libfoo_rs.a: foo-rs/src/* $(OBJECTS_BOTH)
-	cargo build --manifest-path foo-rs/Cargo.toml --release
+target/release/libfoo_rs.a: foo-rs/src/* $(OBJECTS_BOTH)
+	cargo build --manifest-path Cargo.toml --release
+# cargo build --manifest-path foo-rs/Cargo.toml --release
 
-test-rs: main.c $(OBJECTS_BOTH) foo-rs/target/release/libfoo_rs.a
-	gcc main.c $(OBJECTS_BOTH) foo-rs/target/release/libfoo_rs.a -o test-rs
+test-rs: main.c $(OBJECTS_BOTH) target/release/libfoo_rs.a
+	gcc main.c $(OBJECTS_BOTH) target/release/libfoo_rs.a -o test-rs
 
 .PHONY:
 clean:

@@ -49,11 +49,15 @@
             cargo-watch
             rust-analyzer
             gcc
+            rust.packages.stable.rustPlatform.rustLibSrc
+            # rustup
           ];
 
           env = {
             # Required by rust-analyzer
-            RUST_SRC_PATH = "${pkgs.rustToolchain}/lib/rustlib/src/rust/library";
+            RUST_SRC_PATH = "${pkgs.rust.packages.stable.rustPlatform.rustLibSrc}";
+            # RUST_SRC_PATH = "${pkgs.rustToolchain}/lib/rustlib/src/rust/library";
+            # RUST_SRC_PATH = "${pkgs.rustToolchain}/lib/rustlib/x86_64-unknown-linux-gnu/lib";
             LIBCLANG_PATH = pkgs.lib.makeLibraryPath [ pkgs.llvmPackages_latest.libclang.lib ];
           };
 
