@@ -11,3 +11,26 @@ The general idea is:
 If the main entry-point is in rust, the last step is unnecessary, with just a binary crate.
 
 An alternate approach would be to use rustc directly with `--emit=obj --crate-type=staticlib` args to generate object files, and set up the makefile in the same way as for C. But this makes it more work to migrate to cargo later.
+
+
+
+
+
+Interesting notes about C<->rust FFI in general
+===============================================
+
+
+Bindgen
+-------
+Running manually to generate bindings from a header file:
+```sh
+bindgen include/foo.h -o foo-rs/src/temp_bindngs.rs \
+    --use-core
+```
+
+
+
+Strings
+-------
+Rust-allocated strings are _not_ safe to free in C, they have to be passed back to be deallocated!
+ - [https://jakegoulding.com/rust-ffi-omnibus/string_return/]

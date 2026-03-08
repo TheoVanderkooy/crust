@@ -1,41 +1,39 @@
-
 // #![no_std]
 
-// #![feature(allocator_api)]
+// #![feature(allocator_api)]  // api for non-global custom allocators
 
-// struct thingy;
-// use std::alloc::{Allocator, GlobalAlloc};
+use core::alloc::{GlobalAlloc, Layout};
+use std::alloc::System;
 
-// unsafe impl Allocator for thingy {
-//     fn allocate(&self, _layout: std::alloc::Layout) -> Result<std::ptr::NonNull<[u8]>, std::alloc::AllocError> {
-//         todo!()
-//     }
+struct TestGlobalAlloc;
+impl TestGlobalAlloc {
+    const fn new() -> Self {
+        TestGlobalAlloc {}
+    }
+}
 
-//     unsafe fn deallocate(&self, _ptr: std::ptr::NonNull<u8>, _layout: std::alloc::Layout) {
-//         todo!()
-//     }
-// }
+unsafe impl GlobalAlloc for TestGlobalAlloc {
+    unsafe fn alloc(&self, _layout: Layout) -> *mut u8 {
+        unsafe {
+            TEST_GLOBAL_ALLOC_COUNT += 1;
+        }
+        unsafe { System.alloc(_layout) }
+    }
 
-// impl thingy {
-//     const fn new() -> Self {
-//         thingy{}
-//     }
-// }
+    unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {
+        unsafe {
+            TEST_GLOBAL_DEALLOC_COUNT += 1;
+        }
+        unsafe { System.dealloc(_ptr, _layout) }
+    }
+}
 
-// unsafe impl GlobalAlloc for thingy {
-//     unsafe fn alloc(&self, _layout: std::alloc::Layout) -> *mut u8 {
-//         todo!()
-//     }
+#[global_allocator]
+static TEST_GLOBAL_ALLOCATOR: TestGlobalAlloc = TestGlobalAlloc::new();
 
-//     unsafe fn dealloc(&self, _ptr: *mut u8, _layout: std::alloc::Layout) {
-//         todo!()
-//     }
-// }
+static mut TEST_GLOBAL_ALLOC_COUNT: i32 = 0;
+static mut TEST_GLOBAL_DEALLOC_COUNT: i32 = 0;
 
-
-// #[global_allocator]
-// static THINGY: thingy = thingy::new();
-
-
+// Exported things need to be explicitly exported
 mod bindings;
-pub use bindings::test;
+pub use bindings::{test, test_str};
