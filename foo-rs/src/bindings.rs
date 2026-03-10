@@ -12,12 +12,13 @@ unsafe extern "C" {
 pub extern "C" fn test(str_: *mut c_char) -> c_int {
     let msg = unsafe { CStr::from_ptr(str_) }.to_string_lossy();
     println!("got message in rust: {msg}");
+    let v = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
     println!(
         "Global alloc count = {}, dealloc = {}",
         unsafe { TEST_GLOBAL_ALLOC_COUNT },
         unsafe { TEST_GLOBAL_DEALLOC_COUNT }
     );
-    unsafe { test2(12) }
+    unsafe { test2(12 + v.len() as i32) }
 }
 
 // Exported to C

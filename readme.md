@@ -18,6 +18,9 @@ An alternate approach would be to use rustc directly with `--emit=obj --crate-ty
 
 Interesting notes about C<->rust FFI in general
 ===============================================
+Rustonomicon: [https://doc.rust-lang.org/nomicon/ffi.html]
+
+Using unstable features in stable compiler: [[1](https://doc.rust-lang.org/unstable-book/compiler-environment-variables/RUSTC_BOOTSTRAP.html)], [[2](https://doc.rust-lang.org/unstable-book/compiler-flags/allow-features.html)]
 
 
 Bindgen
@@ -27,6 +30,7 @@ Running manually to generate bindings from a header file:
 bindgen include/foo.h -o foo-rs/src/temp_bindngs.rs \
     --use-core
 ```
+- `--use-core` imports from `core` instead of `std`. So it works with `#[no_std]`
 
 
 
@@ -34,3 +38,4 @@ Strings
 -------
 Rust-allocated strings are _not_ safe to free in C, they have to be passed back to be deallocated!
  - [https://jakegoulding.com/rust-ffi-omnibus/string_return/]
+ - does this apply with a custom global allocator that wraps a C allocator?
