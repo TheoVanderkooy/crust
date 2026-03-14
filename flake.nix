@@ -51,7 +51,17 @@
             gcc
             rust.packages.stable.rustPlatform.rustLibSrc
             # rustup
+
+            rust-bindgen
+            clang-tools
+
+            # libclang
+            # clang
           ];
+
+          # nativebuildInputs = with pkgs; [
+          #   pkg-config
+          # ];
 
           env = {
             # Required by rust-analyzer

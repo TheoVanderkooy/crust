@@ -1,5 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["foo-rs"
+members = [ "alloc_test","foo-rs"
     #, "pgrx-test"
+    , "throw_test"
 ]
