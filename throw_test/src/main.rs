@@ -10,7 +10,7 @@ use std::mem::MaybeUninit;
 use crate::bindings::{__sigsetjmp, PG_exception_stack, sigjmp_buf};
 // use crate::bindings::throws; // this is imported by the macro instead
 
-use c_import::{c_import};
+use c_import::{c_import, rust_export};
 
 
 
@@ -22,7 +22,13 @@ fn wrap_throws() ;
 fn wrap_maybe_throws(x: c_int, dothrow: bool) -> c_int;
 
 
-struct PgError;
+#[rust_export(crwap_call_rust_fn)]
+pub fn export_to_c(x: c_int) -> Result<c_int, PgError> {
+    Ok(2 * x)
+}
+
+
+pub struct PgError;
 
 /// Proof of concept of catching a C longjmp "exception".
 /// NOTE: `sigsetjmp` is actually a macro in C, so this is not portable. Should use https://lib.rs/crates/setjmp, or a C shim instead
