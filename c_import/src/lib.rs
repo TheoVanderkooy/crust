@@ -1,8 +1,7 @@
-use proc_macro::{TokenStream};
+use proc_macro::TokenStream;
 use syn::parse_macro_input;
 
 use quote::{ToTokens, quote};
-
 
 /// Macro used to wrap C functions that may "throw" by longjmp
 ///
@@ -20,56 +19,48 @@ use quote::{ToTokens, quote};
 /// And then `bar` will be exposed as an unsafe function in rust, with signature `(c_int, bool) -> Result<c_int, PgError>`
 #[proc_macro_attribute]
 pub fn c_import(attr: TokenStream, item: TokenStream) -> TokenStream {
-
-    // println!("attr: {:#?} \n\nitem: {:#?}", attr, item);
-
     let ast = parse_macro_input!(item as syn::ForeignItemFn);
 
-
-    // Name of the C function should be provided
+    // Name of the C function can be provided, or use the existing one
     let c_fn_name = if attr.is_empty() {
-        // TODO is there a better way to do this?
-        return quote!( compile_error!("no C function name provided"); ).into();
+        ast.sig.ident.clone()
     } else {
         parse_macro_input!(attr as syn::Ident)
     };
 
-
     println!("new fn name: {c_fn_name:#?}");
 
     let mut c_sig = ast.sig.clone();
-
     let new_fn_name = c_sig.ident.clone();
-
     c_sig.ident = c_fn_name.clone();
-
 
     let attrs = ast.attrs;
     let vis = ast.vis;
 
-
     let inputs = c_sig.inputs.clone();
-    let ret_t = match c_sig.output.clone(){
-        syn::ReturnType::Default => quote!( () ),
+    let ret_t = match c_sig.output.clone() {
+        syn::ReturnType::Default => quote!(()),
         syn::ReturnType::Type(_, t) => t.to_token_stream(),
     };
 
-    let args: Vec<_> = inputs.iter().filter_map(
-        |a| match a {
+    let args: Vec<_> = inputs
+        .iter()
+        .filter_map(|a| match a {
             syn::FnArg::Typed(pt) => Some(pt.pat.clone()),
             syn::FnArg::Receiver(_) => None,
-        }
-    ).collect();
+        })
+        .collect();
 
     let ret = quote!(
 
-        unsafe extern "C-unwind" {
-            #[doc(hidden)]
-            unsafe #c_sig ;
-        }
-
         #(#attrs)*
         #vis unsafe fn #new_fn_name(#inputs) -> Result<#ret_t, PgError> {
+
+            unsafe extern "C-unwind" {
+                #[doc(hidden)]
+                unsafe #c_sig ;
+            }
+
             unsafe {
                 let save_stack = PG_exception_stack;
                 let mut local_jmp_buf: sigjmp_buf = MaybeUninit::zeroed().assume_init();
@@ -89,27 +80,19 @@ pub fn c_import(attr: TokenStream, item: TokenStream) -> TokenStream {
             }
 
         }
-
-
-
-    ).into();
+    )
+    .into();
 
     println!("PRODUCED RESULT:\n {ret}");
 
     ret
 }
 
-
-
-// TODO: another macro for rust_export
-//  - if inner thing returns an error, make a postgres error and throw it
-//  - if inner thing panics, make a postgres error
-
+// TODO: #[C_import_infallible]
+//  - like c_import, but returns value directly instead of result
+//  - still does sigsetjmp, but if it catches something it panics instead
 
 // https://ferrous-systems.com/blog/testing-proc-macros/
-
-
-
 
 /// Macro used to wrap rust functions and export them to C.
 /// This converts Result<T, PgError> to either returning T or propagating the error as an ereport.
@@ -130,48 +113,40 @@ pub fn c_import(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// Note that you'll have to add it to a header file manually
 #[proc_macro_attribute]
 pub fn rust_export(attr: TokenStream, item: TokenStream) -> TokenStream {
-
     // Input should be a rust function
     let ast = parse_macro_input!(item as syn::ItemFn);
 
     let fn_name = ast.sig.ident.clone();
     let c_fn_name = parse_macro_input!(attr as syn::Ident);
 
-
     let inputs = ast.sig.inputs.clone();
     let output = ast.sig.output.clone();
 
-    let input_args: Vec<_> = inputs.clone().iter()
-            .filter_map(|a| {
-        match a {
+    let input_args: Vec<_> = inputs
+        .clone()
+        .iter()
+        .filter_map(|a| match a {
             syn::FnArg::Typed(pt) => Some(pt.pat.clone()),
             syn::FnArg::Receiver(_) => None,
-        }
-    }).collect();
-
+        })
+        .collect();
 
     let output = if let syn::ReturnType::Type(_, bt) = output
-            && let syn::Type::Path(tp) = *bt {
-        let last = tp.path.segments.last().expect("expected return type");
-
-        if last.ident != syn::Ident::new("Result", last.ident.span().clone()) {
-            // panic!("expected Result<T, PgError>");
-            return quote!{ compile_error!("Unexpected return type, expected Result") }.into();
-        }
-
-        if let syn::PathArguments::AngleBracketed(x) = &last.arguments {
-            x.args.first().expect("expected retrn type to be Result<T, PgError>")
-        } else {
-            // panic!("expected Result<T, PgError>");
-            return quote!( compile_error!("Unexpected fn return type, expected Result<T, PgError>" )).into();
-        }.to_token_stream()
+        && let syn::Type::Path(tp) = *bt
+        && let Some(last) = tp.path.segments.last()
+        && last.ident == syn::Ident::new("Result", last.ident.span().clone())
+        && let syn::PathArguments::AngleBracketed(generics) = &last.arguments
+        && let Some(t) = generics.args.first()
+    {
+        t.to_token_stream()
     } else {
-        // panic!("expected Result<T, PgError>");
-        return quote!( compile_error!("unexpected return type, expected Result<T, PgError>")).into();
+        return quote!(compile_error!(
+            "unexpected return type, expected Result<T, PgError>"
+        ))
+        .into();
     };
 
-
-    let ret = quote!{
+    let ret = quote! {
         #ast
 
         #[unsafe(no_mangle)]
@@ -183,7 +158,8 @@ pub fn rust_export(attr: TokenStream, item: TokenStream) -> TokenStream {
                 Err(_) => todo!(), // TODO: should longjmp here
             }
         }
-    }.into();
+    }
+    .into();
 
     println!("RESULT =\n{ret}");
 
