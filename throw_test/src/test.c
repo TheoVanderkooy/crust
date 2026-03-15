@@ -3,12 +3,12 @@
 /*
 // gcc -c test.c -o test.o
 
-bindgen src/test.h > src/bindings.rs
 
 */
 
 #include<stdio.h>
 #include<setjmp.h>
+#include<stdbool.h>
 #include "test.h"
 
 sigjmp_buf *PG_exception_stack = NULL;
@@ -43,10 +43,22 @@ void throw(void) {
 void throws()
 {
     printf("pre-throw\n");
-    printf("jmp buf: %x", PG_exception_stack);
+    // printf("jmp buf: %x", PG_exception_stack);
     throw();
     printf("after throw (uncreachable)\n");
 }
+
+
+
+
+int maybe_throws(int x, bool dothrow)
+{
+    if (dothrow) {
+        throw();
+    }
+    return 2 * x;
+}
+
 
 
 void TEST_throw_main() {

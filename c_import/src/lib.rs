@@ -1,0 +1,129 @@
+use proc_macro::TokenStream;
+use syn::parse_macro_input;
+
+use quote::{ToTokens, quote};
+
+
+/// Macro used to wrap C functions that may "throw" by longjmp
+///
+/// For example: if C has the following function
+/// ```C
+/// extern int foo(int x, bool y);
+/// ```
+///
+/// The function should be imported using the macro as follows:
+/// ```rs
+/// #[c_import(foo)]
+/// fn bar(x: c_int, y: bool) -> c_int;
+/// ```
+///
+/// And then `bar` will be exposed as an unsafe function in rust, with signature `(c_int, bool) -> Result<c_int, PgError>`
+#[proc_macro_attribute]
+pub fn c_import(attr: TokenStream, item: TokenStream) -> TokenStream {
+
+    // println!("attr: {:#?} \n\nitem: {:#?}", attr, item);
+
+    let ast = parse_macro_input!(item as syn::ForeignItemFn);
+
+
+    // Name of the C function should be provided
+    let c_fn_name = if attr.is_empty() {
+        // TODO is there a better way to do this?
+        return quote!( compile_error!("no C function name provided"); ).into();
+    } else {
+        parse_macro_input!(attr as syn::Ident)
+    };
+
+
+    println!("new fn name: {c_fn_name:#?}");
+
+    let mut c_sig = ast.sig.clone();
+
+    let new_fn_name = c_sig.ident.clone();
+
+    c_sig.ident = c_fn_name.clone();
+
+
+    let attrs = ast.attrs;
+    let vis = ast.vis;
+
+
+    let inputs = c_sig.inputs.clone();
+    let ret_t = match c_sig.output.clone(){
+        syn::ReturnType::Default => quote!( () ),
+        syn::ReturnType::Type(_, t) => t.to_token_stream(),
+    };
+
+    let args: Vec<_> = inputs.iter().filter_map(
+        |a| match a {
+            syn::FnArg::Typed(pt) => Some(pt.pat.clone()),
+            syn::FnArg::Receiver(_) => None,
+        }
+    ).collect();
+
+    let ret = quote!(
+
+        unsafe extern "C-unwind" {
+            #[doc(hidden)]
+            unsafe #c_sig ;
+        }
+
+        #(#attrs)*
+        #vis unsafe fn #new_fn_name(#inputs) -> Result<#ret_t, PgError> {
+            unsafe {
+                let save_stack = PG_exception_stack;
+                let mut local_jmp_buf: sigjmp_buf = MaybeUninit::zeroed().assume_init();
+                let ret = if __sigsetjmp(local_jmp_buf.as_mut_ptr(), 1) == 0 {
+                    PG_exception_stack = &mut local_jmp_buf;
+
+                    Ok(#c_fn_name (#(#args,)*))
+
+                } else {
+                    PG_exception_stack = save_stack;
+
+                    Err(PgError)
+                };
+                PG_exception_stack = save_stack;
+
+                ret
+            }
+
+        }
+
+
+
+    ).into();
+
+    println!("PRODUCED RESULT:\n {ret}");
+
+
+    // TODO:
+    //  - only allow functions
+    //  - output an unsafe function
+    //  - wrap in extern "C-unwind"
+    //  - copy catch stuff from throw_test
+
+    ret
+}
+
+
+
+// #[doc(hidden)]
+// #[unsafe(no_mangle)]   /// apparently this isn't needed anymore?
+
+
+
+
+// TODO: another macro for rust_export
+//  - if inner thing returns an error, make a postgres error and throw it
+//  - if inner thing panics, make a postgres error
+
+
+// https://ferrous-systems.com/blog/testing-proc-macros/
+
+
+
+// #[cfg(test)]
+// mod tests{
+
+// }

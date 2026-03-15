@@ -43,6 +43,9 @@ pub const __LDOUBLE_REDIRECTS_TO_FLOAT128_ABI: u32 = 0;
 pub const __HAVE_GENERIC_SELECTION: u32 = 1;
 pub const _BITS_SETJMP_H: u32 = 1;
 pub const __jmp_buf_tag_defined: u32 = 1;
+pub const __bool_true_false_are_defined: u32 = 1;
+pub const true_: u32 = 1;
+pub const false_: u32 = 0;
 pub type __jmp_buf = [::std::os::raw::c_long; 8usize];
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -101,4 +104,7 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     pub fn throws();
+}
+unsafe extern "C" {
+    pub fn maybe_throws(x: ::std::os::raw::c_int, dothrow: bool) -> ::std::os::raw::c_int;
 }

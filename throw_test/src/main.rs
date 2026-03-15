@@ -1,21 +1,31 @@
-
-
+#[allow(warnings)]
+#[allow(unused)]
+#[allow(unused_imports)]
 
 mod bindings;
 
+use std::ffi::c_int;
 use std::mem::MaybeUninit;
 
 use crate::bindings::{__sigsetjmp, PG_exception_stack, sigjmp_buf};
-use crate::bindings::throws;
+// use crate::bindings::throws; // this is imported by the macro instead
 
-// unsafe extern "C-unwind" {
-//     unsafe fn  throws();
-// }
+use c_import::{c_import};
+
+
+
+#[c_import(throws)]
+fn wrap_throws() ;
+
+
+#[c_import(maybe_throws)]
+fn wrap_maybe_throws(x: c_int, dothrow: bool) -> c_int;
 
 
 struct PgError;
 
-// TODO: macro-ize this
+/// Proof of concept of catching a C longjmp "exception".
+/// NOTE: `sigsetjmp` is actually a macro in C, so this is not portable. Should use https://lib.rs/crates/setjmp, or a C shim instead
 fn catches_from_c() -> Result<(), PgError> {
     unsafe {
         let save_stack = PG_exception_stack;
@@ -62,4 +72,21 @@ fn main() {
         Ok(()) => println!("catches_from_c() succeeded"),
         Err(_) => println!("catches_from_c() got an error",),
     }
+
+    match unsafe { wrap_throws() } {
+        Ok(()) => println!("catches_from_c() succeeded"),
+        Err(_) => println!("catches_from_c() got an error",),
+    }
+
+
+    match unsafe { wrap_maybe_throws(3, false) } {
+        Ok(ret) => println!("Ran maybe_throws and got result: {ret}"),
+        Err(_) => println!("maybe_throws(false) threw! ERROR"),
+    }
+
+    match unsafe { wrap_maybe_throws(5, true) } {
+        Ok(ret) => println!("Ran maybe_throws and got result: {ret} ERROR"),
+        Err(_) => println!("maybe_throws(true) threw!"),
+    }
+
 }
