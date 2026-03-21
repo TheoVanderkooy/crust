@@ -8,4 +8,5 @@ proc-macro = true
 
 [dependencies]
 quote = "1.0.45"
+setjmp = "0.1.4"
 syn = { version = "2.0.117", features = ["full"] }

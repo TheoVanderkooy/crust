@@ -1,3 +1,5 @@
+use std::panic::{AssertUnwindSafe, catch_unwind};
+
 use proc_macro::TokenStream;
 use syn::parse_macro_input;
 
@@ -54,6 +56,7 @@ pub fn c_import(attr: TokenStream, item: TokenStream) -> TokenStream {
     let ret = quote!(
 
         #(#attrs)*
+        #[inline(never)]
         #vis unsafe fn #new_fn_name(#inputs) -> Result<#ret_t, PgError> {
 
             unsafe extern "C-unwind" {
@@ -63,9 +66,9 @@ pub fn c_import(attr: TokenStream, item: TokenStream) -> TokenStream {
 
             unsafe {
                 let save_stack = PG_exception_stack;
-                let mut local_jmp_buf: sigjmp_buf = MaybeUninit::zeroed().assume_init();
-                let ret = if __sigsetjmp(local_jmp_buf.as_mut_ptr(), 1) == 0 {
-                    PG_exception_stack = &mut local_jmp_buf;
+                let mut local_jmp_buf: MaybeUninit<jmp_buf> = MaybeUninit::zeroed();
+                let ret = if setjmp::sigsetjmp(local_jmp_buf.as_mut_ptr(), 1) == 0 {
+                    PG_exception_stack = local_jmp_buf.as_mut_ptr();
 
                     Ok(#c_fn_name (#(#args,)*))
 
@@ -88,9 +91,91 @@ pub fn c_import(attr: TokenStream, item: TokenStream) -> TokenStream {
     ret
 }
 
-// TODO: #[C_import_infallible]
-//  - like c_import, but returns value directly instead of result
-//  - still does sigsetjmp, but if it catches something it panics instead
+/// Macro used to wrap C functions that are expected to _not_ throw.
+/// If the C function does throw, the rust function will panic.
+///
+/// For example: if C has the following function
+/// ```C
+/// extern int foo(int x, bool y);
+/// ```
+///
+/// The function should be imported using the macro as follows:
+/// ```rs
+/// #[c_import_infallible(foo)]
+/// fn bar(x: c_int, y: bool) -> c_int;
+/// ```
+///
+/// And then `bar` will be exposed as an unsafe function in rust, with signature `(c_int, bool) -> c_int`
+#[proc_macro_attribute]
+pub fn c_import_infallible(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let ast = parse_macro_input!(item as syn::ForeignItemFn);
+
+    // Name of the C function can be provided, or use the existing one
+    let c_fn_name = if attr.is_empty() {
+        ast.sig.ident.clone()
+    } else {
+        parse_macro_input!(attr as syn::Ident)
+    };
+
+    println!("new fn name: {c_fn_name:#?}");
+
+    let mut c_sig = ast.sig.clone();
+    let new_fn_name = c_sig.ident.clone();
+    c_sig.ident = c_fn_name.clone();
+
+    let attrs = ast.attrs;
+    let vis = ast.vis;
+
+    let inputs = c_sig.inputs.clone();
+    let ret_t = match c_sig.output.clone() {
+        syn::ReturnType::Default => quote!(()),
+        syn::ReturnType::Type(_, t) => t.to_token_stream(),
+    };
+
+    let args: Vec<_> = inputs
+        .iter()
+        .filter_map(|a| match a {
+            syn::FnArg::Typed(pt) => Some(pt.pat.clone()),
+            syn::FnArg::Receiver(_) => None,
+        })
+        .collect();
+
+    let ret = quote!(
+
+        #(#attrs)*
+        #[inline(never)]
+        #vis unsafe fn #new_fn_name(#inputs) -> #ret_t {
+
+            unsafe extern "C-unwind" {
+                #[doc(hidden)]
+                unsafe #c_sig ;
+            }
+
+            unsafe {
+                let save_stack = PG_exception_stack;
+                let mut local_jmp_buf: MaybeUninit<jmp_buf> = MaybeUninit::zeroed();
+                let ret = if setjmp::sigsetjmp(local_jmp_buf.as_mut_ptr(), 1) == 0 {
+                    PG_exception_stack = local_jmp_buf.as_mut_ptr();
+
+                    #c_fn_name (#(#args,)*)
+                } else {
+                    PG_exception_stack = save_stack;
+
+                    panic!("got an exception from C fn that was supposed to be infallible!");
+                };
+                PG_exception_stack = save_stack;
+
+                ret
+            }
+
+        }
+    )
+    .into();
+
+    println!("PRODUCED RESULT:\n {ret}");
+
+    ret
+}
 
 // https://ferrous-systems.com/blog/testing-proc-macros/
 
@@ -131,37 +216,73 @@ pub fn rust_export(attr: TokenStream, item: TokenStream) -> TokenStream {
         })
         .collect();
 
+    let mut is_result = false;
     let output = if let syn::ReturnType::Type(_, bt) = output
         && let syn::Type::Path(tp) = *bt
         && let Some(last) = tp.path.segments.last()
-        && last.ident == syn::Ident::new("Result", last.ident.span().clone())
-        && let syn::PathArguments::AngleBracketed(generics) = &last.arguments
-        && let Some(t) = generics.args.first()
     {
-        t.to_token_stream()
+        if last.ident == syn::Ident::new("Result", last.ident.span().clone())
+            && let syn::PathArguments::AngleBracketed(generics) = &last.arguments
+            && let Some(t) = generics.args.first()
+        {
+            is_result = true;
+            t.to_token_stream()
+        } else {
+            last.to_token_stream()
+        }
     } else {
-        return quote!(compile_error!(
-            "unexpected return type, expected Result<T, PgError>"
-        ))
-        .into();
+        quote!(()).into()
     };
 
-    let ret = quote! {
-        #ast
+    let ret = if is_result {
+        quote! {
+            #ast
 
-        #[unsafe(no_mangle)]
-        pub extern "C" fn #c_fn_name( #inputs ) -> #output {
-            // TODO: should also catch rust panics and convert to ereport panic
-            let res = #fn_name (#(#input_args,)*) ;
-            match res {
-                Ok(r) => r,
-                Err(_) => todo!(), // TODO: should longjmp here
+            #[unsafe(no_mangle)]
+            #[inline(never)]
+            pub extern "C" fn #c_fn_name( #inputs ) -> #output {
+                // TODO: should also catch rust panics and convert to ereport panic
+                let res = #fn_name (#(#input_args,)*) ;
+                match res {
+                    Ok(r) => r,
+                    Err(_) => todo!(), // TODO: should longjmp here
+                }
             }
         }
-    }
-    .into();
+        .into()
+    } else {
+        quote! {
+            #ast
+
+            #[unsafe(no_mangle)]
+            #[inline(never)]
+            pub extern "C" fn #c_fn_name( #inputs ) -> #output {
+                // TODO: should also catch rust panics and convert to ereport panic
+                let res = #fn_name (#(#input_args,)*) ;
+                res
+            }
+        }
+        .into()
+    };
 
     println!("RESULT =\n{ret}");
 
     ret
+}
+
+#[inline(never)]
+fn test_abc<F>(f: F)
+where
+    F: FnOnce() -> Result<(), ()>,
+{
+    let res = catch_unwind(AssertUnwindSafe(f));
+
+    match res {
+        Ok(Ok(_)) => todo!(),  // return result
+        Ok(Err(_)) => todo!(), // returned a PgError
+        Err(e) => todo!(), // rust panic! // TODO do we need to catch this, or allow it to abort?
+    }
+
+    // AssertUnwindSafe()
+    // catch_unwind(f)
 }

@@ -6,10 +6,12 @@ mod bindings;
 use std::ffi::c_int;
 use std::mem::MaybeUninit;
 
-use crate::bindings::{__sigsetjmp, PG_exception_stack, sigjmp_buf};
+use setjmp::{jmp_buf, sigsetjmp};
+
+use crate::bindings::PG_exception_stack;
 // use crate::bindings::throws; // this is imported by the macro instead
 
-use c_import::{c_import, rust_export};
+use c_import::{c_import, c_import_infallible, rust_export};
 
 #[c_import(throws)]
 fn wrap_throws();
@@ -25,6 +27,19 @@ pub fn export_to_c(x: c_int) -> Result<c_int, PgError> {
     Ok(2 * x)
 }
 
+#[rust_export(cwrap_fn_no_result)]
+pub fn export_to_c_2(x: c_int) -> c_int {
+    3 * x
+}
+
+#[rust_export(cwrap_fn_no_ret)]
+pub fn export_to_c_3() {
+    println!("no return")
+}
+
+#[c_import_infallible(maybe_throws)]
+fn wrap_maybe_throws_2(x: c_int, dothrow: bool) -> c_int;
+
 pub struct PgError;
 
 /// Proof of concept of catching a C longjmp "exception".
@@ -32,9 +47,9 @@ pub struct PgError;
 fn catches_from_c() -> Result<(), PgError> {
     unsafe {
         let save_stack = PG_exception_stack;
-        let mut local_jmp_buf: sigjmp_buf = MaybeUninit::zeroed().assume_init();
-        if __sigsetjmp(local_jmp_buf.as_mut_ptr(), 1) == 0 {
-            PG_exception_stack = &mut local_jmp_buf;
+        let mut local_jmp_buf: MaybeUninit<jmp_buf> = MaybeUninit::uninit();
+        if sigsetjmp(local_jmp_buf.as_mut_ptr(), 1) == 0 {
+            PG_exception_stack = local_jmp_buf.as_mut_ptr();
 
             // println!("{:?}", {PG_exception_stack});
 
@@ -69,6 +84,8 @@ fn main() {
     //   https://lib.rs/crates/setjmp
     //   https://github.com/jordanisaacs/sjlj
 
+    // docs: https://en.cppreference.com/w/cpp/utility/program/setjmp
+
     match catches_from_c() {
         Ok(()) => println!("catches_from_c() succeeded"),
         Err(_) => println!("catches_from_c() got an error",),
@@ -93,4 +110,10 @@ fn main() {
         Ok(ret) => println!("Ran maybe_throws and got result: {ret} ERROR"),
         Err(_) => println!("maybe_throws(true) threw!"),
     }
+
+    unsafe { wrap_maybe_throws_2(5, false)} ;
+
+    // println!("next thing should panic:");
+    // unsafe { wrap_maybe_throws_2(5, true)} ;
+
 }

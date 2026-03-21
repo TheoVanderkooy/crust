@@ -52,8 +52,12 @@
             rust.packages.stable.rustPlatform.rustLibSrc
             # rustup
 
+            nixd
+
             rust-bindgen
             clang-tools
+
+            glibc
 
             # libclang
             # clang
@@ -69,11 +73,8 @@
             # RUST_SRC_PATH = "${pkgs.rustToolchain}/lib/rustlib/src/rust/library";
             # RUST_SRC_PATH = "${pkgs.rustToolchain}/lib/rustlib/x86_64-unknown-linux-gnu/lib";
             LIBCLANG_PATH = pkgs.lib.makeLibraryPath [ pkgs.llvmPackages_latest.libclang.lib ];
+            CPATH = pkgs.lib.makeIncludePath [ pkgs.glibc.dev ];
           };
-
-          shellHook = ''
-            export PATH=$PATH:~/.cargo/bin
-          '';
         };
       });
     };
