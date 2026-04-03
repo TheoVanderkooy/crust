@@ -3,9 +3,10 @@
 #[allow(unused_imports)]
 mod bindings;
 
-use std::ffi::c_int;
+use std::{ffi::c_int, mem::transmute};
 use std::mem::MaybeUninit;
 
+use cee_scape::{SigJmpBufFields, call_with_sigsetjmp};
 use setjmp::{jmp_buf, sigsetjmp};
 
 use crate::bindings::PG_exception_stack;
@@ -40,7 +41,22 @@ pub fn export_to_c_3() {
 #[c_import_infallible(maybe_throws)]
 fn wrap_maybe_throws_2(x: c_int, dothrow: bool) -> c_int;
 
-pub struct PgError;
+pub enum PgError {
+    PgPassthrough, // indicates something still in the PG error stack
+    New {
+        // ...
+        // level
+        // line
+        // function
+        // file
+        // errmsg
+        // errhint
+        // ...
+        // errcode
+        // backtrace
+        // ...
+    }
+}
 
 /// Proof of concept of catching a C longjmp "exception".
 /// NOTE: `sigsetjmp` is actually a macro in C, so this is not portable. Should use https://lib.rs/crates/setjmp, or a C shim instead
@@ -63,13 +79,35 @@ fn catches_from_c() -> Result<(), PgError> {
             PG_exception_stack = save_stack;
 
             println!("RUST: caught something! returning error");
-            return Err(PgError);
+            return Err(PgError::PgPassthrough);
         }
         PG_exception_stack = save_stack;
     }
 
     Ok(())
 }
+
+
+fn catches_from_c_cscape() -> Result<(), PgError> {
+    unsafe {
+        let save_stack = PG_exception_stack;
+        if call_with_sigsetjmp(true, |env| {
+            PG_exception_stack = transmute(env as *const SigJmpBufFields);
+            use crate::bindings::throws;
+            throws();
+            0
+        }) != 0 {
+            println!("RUST: cee-scape caugth something! returning error");
+            PG_exception_stack = save_stack;
+            return Err(PgError::PgPassthrough);
+        }
+        PG_exception_stack = save_stack;
+        Ok(())
+    }
+}
+
+
+
 
 // TODO: for rust code called from C, provide a way to re-throw
 // TODO: make sure we don't forget that we got an exception from C.. maybe provide a way to clear the error
@@ -115,5 +153,18 @@ fn main() {
 
     // println!("next thing should panic:");
     // unsafe { wrap_maybe_throws_2(5, true)} ;
+
+    match catches_from_c_cscape() {
+        Ok(()) => println!("catches_from_c_cscape succeeded"),
+        Err(_) => println!("catches_from_c_cscape got an error"),
+    }
+
+
+    // sanity check of cee_scape longjmp
+    unsafe {
+        assert_eq!(5, call_with_sigsetjmp(true, |env| {
+            cee_scape::siglongjmp(env, 5);
+        }));
+    }
 
 }

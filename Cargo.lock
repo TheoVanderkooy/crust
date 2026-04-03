@@ -85,6 +85,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "cee-scape"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4d67dfb052149f779f77e9ce089cea126e00657e8f0d11dafc7901fde4291101"
+dependencies = [
+ "cc",
+ "libc",
+]
+
+[[package]]
 name = "cexpr"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -351,6 +361,7 @@ version = "0.1.0"
 dependencies = [
  "c_import",
  "cc",
+ "cee-scape",
  "setjmp",
 ]
 

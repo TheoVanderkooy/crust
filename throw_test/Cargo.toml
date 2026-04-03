@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 c_import = { path = "../c_import" }
+cee-scape = "0.2.0"
 setjmp = "0.1.4"
 
 [build-dependencies]

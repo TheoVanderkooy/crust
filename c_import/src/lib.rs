@@ -75,7 +75,7 @@ pub fn c_import(attr: TokenStream, item: TokenStream) -> TokenStream {
                 } else {
                     PG_exception_stack = save_stack;
 
-                    Err(PgError)
+                    Err(PgError::PgPassthrough)
                 };
                 PG_exception_stack = save_stack;
 
