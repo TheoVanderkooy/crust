@@ -195,7 +195,11 @@ pub fn c_import_infallible(attr: TokenStream, item: TokenStream) -> TokenStream 
 /// ```c
 /// extern int foo(int);
 /// ```
-/// Note that you'll have to add it to a header file manually
+/// Note that you'll have to add it to a header file manually.
+///
+/// Note also that the exported name and internal name (`foo` and `bar` in the example)
+/// should be different, as both functions will be available. When calling from rust, the
+/// rust name should be used (`bar`) and only the exported name (`foo`) should be used in C.
 #[proc_macro_attribute]
 pub fn rust_export(attr: TokenStream, item: TokenStream) -> TokenStream {
     // Input should be a rust function
@@ -215,6 +219,14 @@ pub fn rust_export(attr: TokenStream, item: TokenStream) -> TokenStream {
             syn::FnArg::Receiver(_) => None,
         })
         .collect();
+
+    let input_types: Vec<_> = inputs.clone().iter()
+        .filter_map(|a| match a {
+            syn::FnArg::Typed(pt) => Some(pt.ty.clone()),
+            syn::FnArg::Receiver(_) => None,
+        })
+        .collect();
+
 
     let mut is_result = false;
     let output = if let syn::ReturnType::Type(_, bt) = output
@@ -240,12 +252,26 @@ pub fn rust_export(attr: TokenStream, item: TokenStream) -> TokenStream {
 
             #[unsafe(no_mangle)]
             #[inline(never)]
-            pub extern "C" fn #c_fn_name( #inputs ) -> #output {
+            #[doc(hidden)]
+            pub extern "C-unwind" fn #c_fn_name( #inputs ) -> #output {
+                use static_assertions::assert_impl_all;
+                #( assert_impl_all!( #input_types : PgArg ); )*
+                assert_impl_all!( #output : PgRet );
+
                 // TODO: should also catch rust panics and convert to ereport panic
+
                 let res = #fn_name (#(#input_args,)*) ;
                 match res {
                     Ok(r) => r,
-                    Err(_) => todo!(), // TODO: should longjmp here
+                    Err(_e) => unsafe {
+                        use cee_scape::siglongjmp;
+                        use std::mem;
+
+                        // TODO: map error fields into the real pg exception stack
+                        // TODO: and differentiate between throw (error from rust) and re-throw (error that came from C)
+
+                        siglongjmp(mem::transmute(PG_exception_stack), 1);
+                    },
                 }
             }
         }
@@ -256,8 +282,14 @@ pub fn rust_export(attr: TokenStream, item: TokenStream) -> TokenStream {
 
             #[unsafe(no_mangle)]
             #[inline(never)]
-            pub extern "C" fn #c_fn_name( #inputs ) -> #output {
+            #[doc(hidden)]
+            pub extern "C-unwind" fn #c_fn_name( #inputs ) -> #output {
+                use static_assertions::assert_impl_all;
+                #( assert_impl_all!( #input_types : PgArg ); )*
+                assert_impl_all!( #output : PgRet );
+
                 // TODO: should also catch rust panics and convert to ereport panic
+
                 let res = #fn_name (#(#input_args,)*) ;
                 res
             }
@@ -280,7 +312,7 @@ where
     match res {
         Ok(Ok(_)) => todo!(),  // return result
         Ok(Err(_)) => todo!(), // returned a PgError
-        Err(e) => todo!(), // rust panic! // TODO do we need to catch this, or allow it to abort?
+        Err(_e) => todo!(), // rust panic! // TODO do we need to catch this, or allow it to abort?
     }
 
     // AssertUnwindSafe()

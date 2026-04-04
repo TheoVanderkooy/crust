@@ -14,6 +14,14 @@ use crate::bindings::PG_exception_stack;
 
 use c_import::{c_import, c_import_infallible, rust_export};
 
+unsafe trait PgArg: Sized + Copy {}
+unsafe impl PgArg for c_int {}
+
+unsafe trait PgRet: Sized + Copy {}
+unsafe impl PgRet for c_int {}
+unsafe impl PgRet for () {}
+
+
 #[c_import(throws)]
 fn wrap_throws();
 
@@ -23,10 +31,8 @@ fn wrap_maybe_throws(x: c_int, dothrow: bool) -> c_int;
 #[c_import]
 fn maybe_throws(x: c_int, dothrow: bool) -> c_int;
 
-#[rust_export(crwap_call_rust_fn)]
-pub fn export_to_c(x: c_int) -> Result<c_int, PgError> {
-    Ok(2 * x)
-}
+#[c_import_infallible(maybe_throws)]
+fn wrap_maybe_throws_2(x: c_int, dothrow: bool) -> c_int;
 
 #[rust_export(cwrap_fn_no_result)]
 pub fn export_to_c_2(x: c_int) -> c_int {
@@ -38,8 +44,10 @@ pub fn export_to_c_3() {
     println!("no return")
 }
 
-#[c_import_infallible(maybe_throws)]
-fn wrap_maybe_throws_2(x: c_int, dothrow: bool) -> c_int;
+#[rust_export(crwap_call_rust_fn)]
+pub fn export_to_c(x: c_int) -> Result<c_int, PgError> {
+    Ok(2 * x)
+}
 
 pub enum PgError {
     PgPassthrough, // indicates something still in the PG error stack
