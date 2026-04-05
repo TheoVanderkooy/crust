@@ -66,20 +66,23 @@ pub fn c_import(attr: TokenStream, item: TokenStream) -> TokenStream {
 
             unsafe {
                 let save_stack = PG_exception_stack;
-                let mut local_jmp_buf: MaybeUninit<jmp_buf> = MaybeUninit::zeroed();
-                let ret = if setjmp::sigsetjmp(local_jmp_buf.as_mut_ptr(), 1) == 0 {
-                    PG_exception_stack = local_jmp_buf.as_mut_ptr();
 
-                    Ok(#c_fn_name (#(#args,)*))
+                use std::mem::MaybeUninit;
+                let mut ret: MaybeUninit<Result<#ret_t, PgError>> = MaybeUninit::uninit();
+                use cee_scape::call_with_sigsetjmp;
+                if 0 != call_with_sigsetjmp(true, |env| {
+                    PG_exception_stack = env;
 
-                } else {
+                    ret.write(Ok(#c_fn_name (#(#args,)*)));
+                    0
+                }) {
                     PG_exception_stack = save_stack;
+                    ret.write(Err(PgError::PgPassthrough));
+                }
 
-                    Err(PgError::PgPassthrough)
-                };
                 PG_exception_stack = save_stack;
 
-                ret
+                ret.assume_init()
             }
 
         }
@@ -153,19 +156,24 @@ pub fn c_import_infallible(attr: TokenStream, item: TokenStream) -> TokenStream 
 
             unsafe {
                 let save_stack = PG_exception_stack;
-                let mut local_jmp_buf: MaybeUninit<jmp_buf> = MaybeUninit::zeroed();
-                let ret = if setjmp::sigsetjmp(local_jmp_buf.as_mut_ptr(), 1) == 0 {
-                    PG_exception_stack = local_jmp_buf.as_mut_ptr();
+                use std::mem::MaybeUninit;
 
-                    #c_fn_name (#(#args,)*)
-                } else {
+                let mut ret: MaybeUninit<#ret_t> = MaybeUninit::uninit();
+
+                use cee_scape::call_with_sigsetjmp;
+                if 0 != call_with_sigsetjmp(true, |env| {
+                    PG_exception_stack = env;
+                    ret.write(#c_fn_name (#(#args,)*));
+                    0
+                }) {
                     PG_exception_stack = save_stack;
 
                     panic!("got an exception from C fn that was supposed to be infallible!");
-                };
+                }
+
                 PG_exception_stack = save_stack;
 
-                ret
+                ret.assume_init()
             }
 
         }
@@ -185,7 +193,7 @@ pub fn c_import_infallible(attr: TokenStream, item: TokenStream) -> TokenStream 
 ///
 /// Example:
 /// ```rs
-/// @[rust_export(foo)]
+/// #[rust_export(foo)]
 /// pub fn bar(x: c_int) -> Result<c_int, PgError> {
 ///   Ok(2 * x)
 /// }
@@ -303,7 +311,7 @@ pub fn rust_export(attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 #[inline(never)]
-fn test_abc<F>(f: F)
+fn _test_abc<F>(f: F)
 where
     F: FnOnce() -> Result<(), ()>,
 {

@@ -6,7 +6,7 @@ mod bindings;
 use std::{ffi::c_int, mem::transmute};
 use std::mem::MaybeUninit;
 
-use cee_scape::{SigJmpBufFields, call_with_sigsetjmp};
+use cee_scape::call_with_sigsetjmp;
 use setjmp::{jmp_buf, sigsetjmp};
 
 use crate::bindings::PG_exception_stack;
@@ -73,7 +73,7 @@ fn catches_from_c() -> Result<(), PgError> {
         let save_stack = PG_exception_stack;
         let mut local_jmp_buf: MaybeUninit<jmp_buf> = MaybeUninit::uninit();
         if sigsetjmp(local_jmp_buf.as_mut_ptr(), 1) == 0 {
-            PG_exception_stack = local_jmp_buf.as_mut_ptr();
+            PG_exception_stack = transmute(local_jmp_buf.as_mut_ptr());
 
             // println!("{:?}", {PG_exception_stack});
 
@@ -100,7 +100,7 @@ fn catches_from_c_cscape() -> Result<(), PgError> {
     unsafe {
         let save_stack = PG_exception_stack;
         if call_with_sigsetjmp(true, |env| {
-            PG_exception_stack = transmute(env as *const SigJmpBufFields);
+            PG_exception_stack = env;
             use crate::bindings::throws;
             throws();
             0
