@@ -3,3 +3,4 @@ test-c
 test-rs
 /.direnv
 /target
+/vendor

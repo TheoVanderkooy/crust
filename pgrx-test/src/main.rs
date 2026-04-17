@@ -59,4 +59,9 @@ fn test3() {
 fn test4() {
     #[pg_guard]
     test();
+
+
+    use pgrx::elog::ereport;
+
+    ereport!("test");
 }
