@@ -1,6 +1,6 @@
 use crate::{TEST_GLOBAL_ALLOC_COUNT, TEST_GLOBAL_DEALLOC_COUNT};
 use core::ffi::{CStr, c_char, c_int};
-use std::ffi::CString;
+use std::{backtrace::Backtrace, ffi::CString};
 
 // Imports from C-provided functions
 unsafe extern "C" {
@@ -34,5 +34,23 @@ pub extern "C" fn test_str(x: c_int) -> *const c_char {
         unsafe { TEST_GLOBAL_ALLOC_COUNT },
         unsafe { TEST_GLOBAL_DEALLOC_COUNT }
     );
+
+    print_bt();
+
     ret
+}
+
+
+#[inline(never)]
+pub fn print_bt() {
+
+    let bt = Backtrace::force_capture();
+
+    println!("Backtrace: {bt:#?}");
+    println!("Backtrace: {bt}");
+
+    // unstable only :(
+    // for f in bt.frames() {
+    //     println!("  {f:#?}");
+    // }
 }
